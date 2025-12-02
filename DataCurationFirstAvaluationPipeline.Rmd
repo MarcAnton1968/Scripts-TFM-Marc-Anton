@@ -1,0 +1,644 @@
+---
+title: "Sensibilitat de l’índex LPI-Cat a tendències poblacionals extremes"
+author: "Marc Anton"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  pdf_document:
+    toc: true
+subtitle: Tractament de dades i avalució dels efectes de la distribució i la cobertura
+  sobre les tendències i la seva incertesa
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Introucció
+
+Aquest *markdown* conté el pipeline per fer la lectura de les dades necessaries per els primers anàlisi del Treball de Final de Màster **Sensibilitat de l’índex LPI-Cat a tendències poblacionals extremes** de Marc Anton Recasens. 
+
+En concret el pipeline té dues fases:
+
+1. Càrrega de dades i tractament per a generar un *input file* per a l'anàlisi
+2. Avalució dels efectes de la distribució i la cbertura del mostratge en la tendència i la seva incertesa
+
+```{r, warning=FALSE, include=FALSE}
+# comencem per carregar les llibreries que es faran servir al llarg del pipeline
+library(dplyr)
+library(ggplot2)
+library(lmerTest)
+library(gtsummary)
+library(MuMIn)
+library(merTools)
+library(DHARMa)
+library(sjPlot)
+```
+
+# 2. Càrrega de dades
+
+Cal tenir en compte que les dades estan en diversos formats:
+
+1. Les distribucions venen de fitxers zip que comencen per Cartobio
+2. Els iItineraris  i comptatges venen de zips que comencen per la data que s'ha baixat
+3. Les tendències venen totes junts amb un sol fitxer
+
+Comencem amb el fitxer de tendències que és un de sol i ja baixa amb el que necessitem. Addicionalment hi he posat el tàxon a ma
+
+```{r}
+trends <- read.csv("./lpi_cat2024_species_trends_metadata.csv", header = TRUE, sep = ";")
+```
+
+Ara, anem amb les distribucions i els itineraris
+
+```{r}
+## Fem una llista dels zips
+
+zips <- list.files(, pattern = "\\.zip$", full.names = TRUE)
+
+## Els llegim un a un i anem posant les dades en els fitxers. Tenim 2 tipus de zips
+##    i els tractem per separat
+
+prefix <- "./cartobio"
+sites <- data.frame()
+counts <- data.frame()
+distributions <- data.frame()
+for (i in 1:length(zips)) {
+  print(i)
+  zip_file <- zips[i]
+  print(zip_file)
+  
+  if (grepl(paste0("^", prefix), zip_file) == TRUE) {
+    print("dist")
+    fitxer <- unzip(zip_file, list = TRUE)
+    distributions <- rbind(distributions,
+                     read.csv(unz(zip_file,fitxer$Name), header = TRUE, sep = ";"))
+  } 
+  else {
+    print ("surveys")
+    #
+    #  Abans que res, com que hi ha codis de sites iguals en diferents projectes, 
+    #     extraiem el nom del projecte
+    #
+    projecte <- tail(strsplit(zip_file, "_")[[1]],1)
+    projecte <- sub("\\.zip$", "", projecte)
+    print(projecte)
+    
+    #
+    #  Ara carreguem els sites
+    #
+    site <- read.csv(unz(zip_file, "sites.csv"), header = TRUE, sep = ";")
+    site$projecte <- projecte
+    sites <- rbind(sites, site)
+    head(sites)
+    
+    #
+    # I els counts
+    #
+    count <- read.csv(unz(zip_file, "counts.csv"), header = TRUE, sep = ";")
+    count$projecte <- projecte
+    counts <- rbind(counts, count)
+    head(counts)
+  }
+}
+# El fitxer de distribucions, porta algun valor duplicat que ens pot donar problemes i, per tant, l'eliminem
+distributions <- distributions[,1:2]
+distributions <- distinct(distributions)
+```
+
+# 3. Generació de l'*input file*
+
+En la distribució, sabem que, a vegades, hi ha quadrats UTM 10km que no estan a la distribució, però que apareixen en el mostratges. Començem, per tant, afegint aquests quadrats 
+
+```{r}
+#   Agafem les espècies i els quadrats en els que hi ha cens
+
+species_sites <- inner_join(sites, counts, by = c("code", "projecte")) %>% 
+  dplyr::select(species, X10x10) %>% distinct()
+
+#   Igualem el noms de columnes a distributions i a species_sites per poder fer joins
+
+names(distributions)[names(distributions) == "scientific_name"] <- "species_name"
+names(species_sites)[names(species_sites) == "species"] <- "species_name"
+names(species_sites)[names(species_sites) == "X10x10"] <- "cellcode"
+
+#   Per treballar be, però, farem el dataset de sortida només per aquelles espècies
+#      per a les quals tenim distribució, evitant NAs
+#  Comencem per saber quines espècies estan a distribution
+
+speciesDist <- unique(distributions$species_name)
+
+#   Filtrem els sites pe aquestes espècies
+
+species_sites <- species_sites %>% filter(species_name %in% speciesDist)
+
+#  I afegim els quadrats en els quals hi ha mostreig a distributions
+
+NewUTM10 <- anti_join(species_sites, distributions, by = c("species_name","cellcode"))
+
+distributions <- bind_rows(distributions, NewUTM10)
+```
+
+Ara ja podem generar la variable distribució com a el total de quadrats UTM10km en els que està l'espècie.
+
+```{r}
+distributions_n <- distributions %>%
+  group_by(species_name) %>%   # Agrupa per espècie
+  summarise(n = n())              # Comptar files (que són les UTM10) per espècie
+
+distributions_n
+
+# La incorporem al fitxer d'entrada a les anàlisi
+
+inputDf <- left_join(trends, distributions_n, by = "species_name")
+```
+
+Ara generem la cobertura com el percentatge d'UTM10km en els quals es troba l'espècie en els mostratges dins la distribució de l'espècie
+
+```{r}
+#  Generem la cobertura fent el percentatge
+
+coverage <- species_sites %>%
+  group_by(species_name) %>%
+  summarise(n_UTM10 = n_distinct(cellcode))
+coveragePerc <- left_join(distributions_n, coverage, by = "species_name")
+coveragePerc$percentage <- (coveragePerc$n_UTM10 / coveragePerc$n) * 100
+print(coveragePerc)
+
+# I l 'annexem al inputDf
+
+inputDf <- inputDf %>%
+  left_join(coveragePerc %>% 
+              dplyr::select(species_name, percentage), by = "species_name")
+```
+
+Afegim també els anys de mostratge
+
+```{r}
+trendsyears <- read.csv("./lpi_cat2024_lpi_cat_species.csv", header = TRUE, sep = ";")
+years <- trendsyears %>% 
+  group_by(species_name) %>%
+  summarise(n_anys = n_distinct(year))
+inputDf <- inputDf %>%
+    left_join(years, by = "species_name")
+
+```
+
+Finalment, arreglem el *input file* amb uns noms més explícits en relació al que estudiem
+
+```{r}
+inputDf <- inputDf[,c("species_code", "species_name", "Taxononmic_group", 
+                 "annual_change_percentage", "std_error", "n", "percentage","n_anys")]
+colnames(inputDf) <- c("SpeciesCode", "SpeciesName", "Taxon", "Trend", "SETrend", 
+                       "Distribution", "SamplingCoverage","years")
+
+#     Mirem com  son els camps
+
+summary(inputDf)
+```
+
+Com que tenim molts NAs i volem limitar l'anàlisi a la disponibilitat de dades, eliminem els registres que no tenen distribució o cobertura
+
+````{R}
+inputDf <- inputDf[is.na(inputDf$Distribution) == FALSE,]
+inputDf <- inputDf[is.na(inputDf$SamplingCoverage) == FALSE,]
+summary(inputDf)
+````
+
+Ara sí!!
+
+# 4. Anàlisi de correlació entre tendències i errors estandards amb distribució i cobertura
+
+Abans de començar amb l'anàlisi, ens cal comprovar la normalitat de les variables resposta a analitzar. Les variables són: 1) la tendència, i 2) el seu error estàndard
+
+```{r}
+#  Per la tendència
+
+hist(inputDf$Trend)
+qqnorm(inputDf$Trend)
+shapiro.test(inputDf$Trend)
+
+```
+
+No hi ha motius per dubtar de la normalitat
+
+```{r}
+#  Error estandard
+
+hist(inputDf$SETrend)
+qqnorm(inputDf$SETrend)
+shapiro.test(inputDf$SETrend)
+```
+
+Aquí, ja hi ha més problemes, pel que optem per una tranformació logarítmica
+
+```{r}
+hist(log(inputDf$SETrend))
+qqnorm(log(inputDf$SETrend))
+shapiro.test(log(inputDf$SETrend))
+```
+
+Això ja va millor i, per tant, treballarem amb el logaritme
+
+# 4.1. Avaluació de la tendència en funció de la distribució i la cobertura del mostratge
+
+Fem un gràfic primer per veure com s'ajunta la distribució a la tendència per taxon
+
+```{r}
+ggplot(inputDf, aes(Distribution, Trend, color= Taxon) ) + 
+  geom_point() + 
+  labs(colour="Taxon")
+```
+
+I ara, separant cada tàxon
+
+```{r}
+ggplot(data = inputDf, aes(x = Distribution, y = Trend, color = Taxon)) +
+  geom_point() +
+  theme_bw() +
+  facet_wrap(~ Taxon) + labs(y = "Trend") + 
+  theme(legend.position = "none")
+```
+
+Apunta coses
+
+Fem, per tant models amb la tendència i la distribució, però mirem també si la cobertura hi té algun efecte. Comencem pel model simple només amb l'efecte aleatori per veure si a l'afegir més variables, els models expliquen més variació.
+
+```{r}
+DistModel0 <- lmer(Trend ~ (1 | Taxon),
+     data = inputDf, weights = 1/SETrend)
+summary(DistModel0)
+```
+
+```{r}
+DistModel1 <- lmer(Trend ~ Distribution + (1 | Taxon),
+     data = inputDf, weights = 1/SETrend)
+summary(DistModel1)
+```
+
+I, ara, afegim la cobertura
+
+```{r}
+DistModel2 <- lmer(Trend ~ Distribution + SamplingCoverage + (1 | Taxon),
+                   data = inputDf, weights = 1/SETrend)
+summary(DistModel2)
+```
+
+I provem també la interacció entre les dues variables
+
+```{r}
+DistModel3 <- lmer(Trend ~ Distribution * SamplingCoverage + (1 | Taxon),
+                   data = inputDf, weights = 1/SETrend)
+summary(DistModel3)
+```
+
+A priori, sembla que el segon model, només amb distribució, és el que millor s'jausta i que, per tant, la cobertura del mostratge no té cap efecte sobre la tendència, però fem un test per assegurar que no val la pena, afegir complexitat al model.
+
+```{r}
+anova(DistModel0, DistModel1, DistModel2, DistModel3)
+```
+
+Per tant, sembla que els models més complexes no aporten més informació i ens quedem amb el model que incorpora només la distribució. 
+
+Per assegurar el tir, però, fem una validació del model amb qqplot i gràfics de residus vs prediccions
+
+```{r}
+# simulem els residus
+SimResDistModel <- simulateResiduals(DistModel1)
+plot(SimResDistModel)
+```
+
+Sembla que alguna cua fa que la normalitat dels residus no sigui absoluta, però no es detecta cap outlier. Per tant, no sembla que el model sigui dolent del tot i, considerant que tractem dades ecològiques molt heterogènies, no hem de patir massa.
+
+En conclusió, ens quedem amb el model senzill que s'jausta prou be i que ens indica que la tendència és més negativa en aquelles espècies amb una menor distribució que d'alguna manera poden associar-se a les més especialistes.
+
+De cara a fer sortides elegants, fem un gràfic per veure el model amb cada tàxon
+
+```{r}
+inputDf$predictions <- predict(DistModel1)
+coefs <- fixef(DistModel1)               # efectes fixos (intercept i pendent)
+
+ggplot(data = inputDf, aes(x = Distribution, y = predictions, color = Taxon)) +
+  geom_line() +
+  geom_point(aes(x = Distribution, y = Trend, color = Taxon)) +
+  geom_abline(intercept = coefs[1], slope = coefs[2], color = "black", 
+              linetype = "dashed", linewidth = 0.5) +
+  theme_bw() +
+  facet_wrap(~ Taxon) + 
+  theme(legend.position = "none") + labs(y = "Distribution")
+
+```
+
+I un altre per veure el model amb els seus ICs
+
+```{r}
+# fem la matriu de var-cov dels efectes fixos
+vcov_mat <- vcov(DistModel1)
+
+# I un dataset per fer prediccions
+new_data <- data.frame(
+  Distribution = seq(min(inputDf$Distribution),
+                     max(inputDf$Distribution),
+                     length.out = 100)
+)
+
+# Matriu de disseny per a cada punt (1 columna d'intercept i 1 de la variable)
+X <- model.matrix(~ Distribution, new_data)
+
+# Prediccions (només efectes fixos)
+new_data$fit <- X %*% coefs
+
+# Error estàndard de la predicció
+pred_var <- diag(X %*% vcov_mat %*% t(X))
+new_data$se <- sqrt(pred_var)
+
+# Interval de confiança del 95%
+new_data$lwr <- new_data$fit - 1.96 * new_data$se
+new_data$upr <- new_data$fit + 1.96 * new_data$se
+
+# I ara, ho grafiquem tot
+ggplot(inputDf, aes(Distribution, Trend, color = Taxon)) +
+  geom_point(alpha = 0.6) +
+  # Banda de confiança del model mixt
+  geom_ribbon(
+    data = new_data,
+    aes(x = Distribution, ymin = lwr, ymax = upr),
+    inherit.aes = FALSE,
+    fill = "grey70", alpha = 0.4
+  ) +
+  # Recta global dels efectes fixos
+  geom_line(
+    data = new_data,
+    aes(x = Distribution, y = fit),
+    inherit.aes = FALSE,
+    color = "black",
+    linewidth = 1.2
+  ) +
+  labs(colour = "Taxon") +
+  theme_minimal()  +
+  theme(
+    axis.title = element_text(size = 16),    # Títols dels eixos
+    axis.text = element_text(size = 14),     # Nombres de marques
+    legend.title = element_text(size = 15),  # Títol llegenda
+    legend.text = element_text(size = 13)    # Text llegenda
+  )
+```
+
+Un punt que no és trivial, és que ara tenim una relació entre la tendència i la la distribució, però entre una tendència extrema i la distribució que era el que buscavem. Ens va be tenir aquest primer resultat, però mirem el punt dels extrems de la tendència que ho farem de la mateixa manera, però amb el valor absolut de la tendència.
+
+Seguim el mateix proces que abans, primer amb un test de normalitat
+
+```{r}
+#  Per la tendència
+
+hist(abs(inputDf$Trend))
+qqnorm(abs(inputDf$Trend))
+shapiro.test(abs(inputDf$Trend))
+```
+
+Això ens suggereix provar amb una transformació logarítmica
+
+```{r}
+#  Per la tendència
+
+hist(log(abs(inputDf$Trend)))
+qqnorm(log(abs(inputDf$Trend)))
+shapiro.test(log(abs(inputDf$Trend)))
+```
+
+Aqui sembla que millora, tot i algun valor una mica extrem
+
+I, després, amb dos gràfics preliminars
+
+```{r}
+ggplot(inputDf, aes(Distribution, log(abs(Trend)), color= Taxon) ) + 
+  geom_point() + 
+  labs(colour="Taxon")
+```
+
+```{r}
+ggplot(data = inputDf, aes(x = Distribution, y = log(abs(Trend)), color = Taxon)) +
+  geom_point() +
+  theme_bw() +
+  facet_wrap(~ Taxon) + labs(y = "Trend") + 
+  theme(legend.position = "none")
+
+```
+
+Aparentment, funciona. Fem els models.
+
+
+```{r}
+DistAbsModel0 <- lmer(log(abs(Trend)) ~ (1 | Taxon),
+                   data = inputDf, weights = 1/SETrend)
+summary(DistAbsModel0)
+```
+
+```{r}
+DistAbsModel1 <- lmer(log(abs(Trend)) ~ Distribution + (1 | Taxon),
+                   data = inputDf, weights = 1/SETrend)
+summary(DistAbsModel1)
+
+```
+
+```{r}
+DistAbsModel2 <- lmer(log(abs(Trend)) ~ Distribution + SamplingCoverage + (1 | Taxon),
+                   data = inputDf, weights = 1/SETrend)
+summary(DistAbsModel2)
+```
+
+```{r}
+DistAbsModel3 <- lmer(log(abs(Trend)) ~ Distribution * SamplingCoverage + (1 | Taxon),
+                   data = inputDf, weights = 1/SETrend)
+summary(DistAbsModel3)
+```
+
+I els comparem
+
+```{r}
+anova(DistAbsModel0, DistAbsModel1, DistAbsModel2, DistAbsModel3)
+```
+
+Novament sembla que el model més complex no aporta res i que el factor aleatori explica una part de la variació. 
+
+Validem el model amb distribució
+
+```{R}
+# simulem els residus
+SimResDistAbsModel <- simulateResiduals(DistAbsModel1)
+plot(SimResDistAbsModel)
+```
+
+Sembla que el model peca d'heterocedasticitat, però novamemt cal considerar el tipus de dada que tractem i que no hi ha presència d'outliers.
+
+Per tant, ens quedarem amb el model senzill que ens indica que la tendència és més extrema en aquelles espècies amb una menor distribució el que vol dir que aquestes tendències influiran més en l'LPI-cat. D'altra banda, sembla que aquests models s'ajusten millor que els de la tendència el que, potser apunta que la relació és més forta amb el valor absolut, és a dir amb tendències extremes que amb negatives.
+
+Fem les sortides pel TFM
+
+```{r}
+#   Gràfic on es veu cada model i el model general
+
+inputDf$predictions2 <- predict(DistAbsModel1)
+
+coefs_abs <- fixef(DistAbsModel1)               # efectes fixos (intercept i pendent)
+
+ggplot(data = inputDf, aes(x = Distribution, y = predictions2, color = Taxon)) +
+  geom_line() +
+  geom_point(aes(x = Distribution, y = log(abs(Trend)), color = Taxon)) +
+  geom_abline(intercept = coefs_abs[1], slope = coefs_abs[2], color = "black", 
+              linetype = "dashed", linewidth = 0.5) +
+  theme_bw() +
+  facet_wrap(~ Taxon) + 
+  theme(legend.position = "none") + labs(y = "Distribution")
+```
+
+```{r}
+# I un segon gràfic amb les dades crues, el model i els seus IC
+
+# matriu de var-cov dels efectes fixos
+vcov_mat_abs <- vcov(DistAbsModel1)
+
+new_data_abs <- data.frame(
+  Distribution = seq(min(inputDf$Distribution),
+                     max(inputDf$Distribution),
+                     length.out = 100)
+)
+# Matriu de disseny per a cada punt (1 columna d'intercept i 1 de la variable)
+X_abs <- model.matrix(~ Distribution, new_data_abs)
+
+# Prediccions (només efectes fixos)
+new_data_abs$fit <- X_abs %*% coefs_abs
+
+# Error estàndard de la predicció
+pred_var_abs <- diag(X_abs %*% vcov_mat_abs %*% t(X_abs))
+new_data_abs$se <- sqrt(pred_var_abs)
+
+# Interval de confiança del 95%
+new_data_abs$lwr <- new_data_abs$fit - 1.96 * new_data_abs$se
+new_data_abs$upr <- new_data_abs$fit + 1.96 * new_data_abs$se
+
+ggplot(inputDf, aes(Distribution, log(abs(Trend)), color = Taxon)) +
+  geom_point(alpha = 0.6) +
+  # Banda de confiança del model mixt
+  geom_ribbon(
+    data = new_data_abs,
+    aes(x = Distribution, ymin = lwr, ymax = upr),
+    inherit.aes = FALSE,
+    fill = "grey70", alpha = 0.4
+  ) +
+  # Recta global dels efectes fixos
+  geom_line(
+    data = new_data_abs,
+    aes(x = Distribution, y = fit),
+    inherit.aes = FALSE,
+    color = "black",
+    linewidth = 1.2
+  ) +
+  labs(colour = "Taxon") +
+  theme_minimal()  +
+  theme(
+    axis.title = element_text(size = 16),    # Títols dels eixos
+    axis.text = element_text(size = 14),     # Nombres de marques
+    legend.title = element_text(size = 15),  # Títol llegenda
+    legend.text = element_text(size = 13)    # Text llegenda
+  )
+```
+
+## 4.2. Avaluació de l'error estàndard de la tendència en funció de la cobertura del mostratge i la distribució de l'espècie
+
+Farem el mateix procés que abans, però utilitzant el logaritme de l'error estàndard, en comptes de l'error tal qual.
+
+Comencem pels gràfics previs
+
+```{r}
+ggplot(inputDf, aes(SamplingCoverage, log(SETrend), color= Taxon) ) + 
+  geom_point() + 
+  labs(colour="Taxon")
+
+```
+
+```{r}
+ggplot(data = inputDf, aes(x = SamplingCoverage, y = log(SETrend), color = Taxon)) +
+  geom_point() +
+  theme_bw() +
+  facet_wrap(~ Taxon) + labs(y = "Standard error of Trend") + 
+  theme(legend.position = "none")
+```
+
+Sembla que alguna relació hi ha. Per tant, anem pels models per testar la incertesa de la tendència. Fem un de simple amb la cobertura, i un segon afegint la distribució.
+
+```{r}
+SampleModel0 <- lmer(log(SETrend) ~ (1 | Taxon),
+                   data = inputDf)
+summary(SampleModel0)
+```
+
+```{r}
+SampleModel1 <- lmer(log(SETrend) ~ SamplingCoverage + (1 | Taxon),
+                   data = inputDf)
+summary(SampleModel1)
+```
+
+```{r}
+SampleModel2 <- lmer(log(SETrend) ~ SamplingCoverage + Distribution + (1 | Taxon),
+                   data = inputDf)
+summary(SampleModel2)
+```
+
+```{r}
+SampleModel3 <- lmer(log(SETrend) ~ SamplingCoverage * Distribution + (1 | Taxon),
+                   data = inputDf)
+summary(SampleModel3)
+```
+
+Sembla que, aquest cop, si que les dues variables tenen una relació significativa amb l'error estàndard de la tendència, però fem el test per confirmar que el segon model val la pena
+
+```{r}
+anova(SampleModel0, SampleModel1, SampleModel2, SampleModel3)
+
+```
+
+En aquest cas, sembla que el millor model és el que incorpora les dues variables semse interacció.
+
+Validem el model amb les dues variables sense interacció
+
+```{r}
+SimResSampleModel <- simulateResiduals(SampleModel2)
+plot(SimResSampleModel)
+```
+
+Novament els residus no s'ajusten molt a una normal, però no es detecten outliers i, considerant la tipologia de les dades, no cal patir
+
+Què vol dir que el millor model és el que incopora les dues variables i la seva interacció? Doncs que tant la cobertura com la Distribució tenen una relació inversa significativa amb l'error estandard, és a dir, a menor cobertura i menor distribució, major incertesa en la tendència que era el que esperavem i que, a més, aquest efecte és sinèrgic i s'intensifica al tractar les dues variables.
+
+Fem un gràfic per poder posar als informes i veure l'efecte de la interacció
+
+```{R}
+set_theme(base = theme_classic(), #To remove the background color and the grids
+          #theme.font = 'serif',  #To change the font type
+          axis.title.size = 0.8,  #To change axis title size
+          axis.textsize = 0.8)    #To change axis text size
+plot_model(SampleModel2, type = "pred", terms = c("SamplingCoverage", "Distribution"))
+```
+
+# 5. Valoració dels models escollits.
+
+Un punt interessant també pot ser mirar la $R^2$ dels models. Ho fem amb el paquet MuMin que dona $R^2m$ que és la $R^2$ marginal, és a dir sense els efectes aleatoris i la $R^2$ condicional que incopora els efectes aleatoris.
+
+```{R}
+r.squaredGLMM(DistModel1)
+r.squaredGLMM(DistAbsModel1)
+r.squaredGLMM(SampleModel2)
+```
+
+Els valors baixos de R² marginal són esperables, ja que el model jeràrquic mostra que gran part de la variació en les tendències s’explica pel factor aleatori associat al tàxon, mentre que els efectes fixos (distribució i cobertura) expliquen només una fracció menor de la variància. Això és habitual en models ecològics en què hi ha heterogeneïtat intrínseca entre grups biològics o taxonòmics. Per tant, encara que el R² marginal sigui modest, el R² condicional indica que el model captura adequadament la variabilitat global, i les conclusions sobre els efectes fixos continuen sent vàlides i interpretables. En el nostre cas, els valors d’R² condicional indiquen que els models de tendències expliquen una proporció moderada de la variància total (0.30 i 0.09), cosa esperable donada la naturalesa complexa del procés i la presència de factors no inclosos en el model. En canvi, el model que considera log(SE(trend)) mostra un ajust substancialment més alt (0.76), suggerint que aquesta variable és més previsible en funció de la distribució, la cobertura i el factor tàxon.
+
+# 6. Conclusions relatives a la relació entre les tendències, la distribució i la cobertura
+
+1. La menor distribució s'associa a tendències més extremes i més negatives. El que vol dir que les especialistes són les més damnificades dels processos de canvi i les que poden influir més en el LPI.
+2. Sembla que la cobertura no influeix en la tendència, ni per fer-la més o menys negativa, ni per fer-la més extrema. Per tant, potser una mala cobertura, no és un problema. Però no sabem si una major cobertura, pot canviar el signe d'una tendència.
+3. Això no sembla canviar massa per taxons, però si que sembla que incorporar el tàxon com un efecte aleatori explica més la variabilitat dels models.
+4. Menors cobertures i distribucions impliquen major incertesa. En el cas de la distribució, és igual, ja que no es pot resoldre. En el cas de la cobertura, sí que això implica que millor que sigui com més gran major. 
+
