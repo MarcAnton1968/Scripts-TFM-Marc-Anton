@@ -312,13 +312,3 @@ for (X in 1:10){
   }
   
 }
-
-library(gt)
-
-gt(testResults) |>
-  tab_header(
-    title = "Resultats del test de sensibilitat",
-    subtitle = "Test de z scores"
-  ) |>
-  fmt_number(columns = everything()) |>
-  opt_row_striping()
