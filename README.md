@@ -6,6 +6,7 @@ Em aquest repositori s'hi han dipositat els següents scripts:
 2. Sesitivity_analisi.R.- És un script on es calculen diversos indicadors LPI-cat extraient espècies mal i ben distribuides i s'avalua fins a quin punt representen un canvi en l'indicador amb l'objectiu d'establir la sensibilitat d'aquest canvi en l'indicacdor LPI-cat. Aquest script crida a un altre que és el que fa els càlculs de l'indicador. És un script fet per Statistics Netherland que es va difondre entre tots els participants al projecte PECBMS (https://pecbms.info/) del qual l'ICO en forma part
 3. MSI_23_TFM.R.- És l'script que  genera els  indicadors LPI-cat. Ho fa calculant una mitjana geomètrica dels índexs anuals de les tendències de caada espècie i generant uns intervals de confiança per iteracions de Montecarlo que també generen una línia suavitzada de l'indicador.
 4. ouputs_informe_final.R.- Conté el codi per fer taules i gràfics per l'informe final
+5. Resultats_grafics_indicadors.R que genera el gràfic final de l'anàlisi dels indicadors
 
 En el repositori també hi ha el html resultatnt de l'execució del rmd
 
