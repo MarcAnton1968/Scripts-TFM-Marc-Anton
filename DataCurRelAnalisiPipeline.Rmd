@@ -174,25 +174,13 @@ inputDf <- inputDf %>%
               dplyr::select(species_name, percentage), by = "species_name")
 ```
 
-Afegim també els anys de mostratge
-
-```{r}
-trendsyears <- read.csv("./lpi_cat2024_lpi_cat_species.csv", header = TRUE, sep = ";")
-years <- trendsyears %>% 
-  group_by(species_name) %>%
-  summarise(n_anys = n_distinct(year))
-inputDf <- inputDf %>%
-    left_join(years, by = "species_name")
-
-```
-
 Finalment, arreglem el *input file* amb uns noms més explícits en relació al que estudiem
 
 ```{r}
 inputDf <- inputDf[,c("species_code", "species_name", "Taxononmic_group", 
-                 "annual_change_percentage", "std_error", "n", "percentage","n_anys")]
+                 "annual_change_percentage", "std_error", "n", "percentage")]
 colnames(inputDf) <- c("SpeciesCode", "SpeciesName", "Taxon", "Trend", "SETrend", 
-                       "Distribution", "SamplingCoverage","years")
+                       "Distribution", "SamplingCoverage")
 
 #     Mirem com  son els camps
 

@@ -11,7 +11,7 @@
 
 <meta name="author" content="Marc Anton" />
 
-<meta name="date" content="2025-12-03" />
+<meta name="date" content="2025-12-29" />
 
 <title>Sensibilitat de l’índex LPI-Cat a tendències poblacionals extremes</title>
 
@@ -1484,7 +1484,7 @@ tendències poblacionals extremes</h1>
 <h3 class="subtitle">Tractament de dades i avalució dels efectes de la
 distribució i la cobertura sobre les tendències i la seva incertesa</h3>
 <h4 class="author">Marc Anton</h4>
-<h4 class="date">2025-12-03</h4>
+<h4 class="date">2025-12-29</h4>
 
 </div>
 
@@ -1730,19 +1730,12 @@ print(coveragePerc)</code></pre>
 inputDf &lt;- inputDf %&gt;%
   left_join(coveragePerc %&gt;% 
               dplyr::select(species_name, percentage), by = &quot;species_name&quot;)</code></pre>
-<p>Afegim també els anys de mostratge</p>
-<pre class="r"><code>trendsyears &lt;- read.csv(&quot;./lpi_cat2024_lpi_cat_species.csv&quot;, header = TRUE, sep = &quot;;&quot;)
-years &lt;- trendsyears %&gt;% 
-  group_by(species_name) %&gt;%
-  summarise(n_anys = n_distinct(year))
-inputDf &lt;- inputDf %&gt;%
-    left_join(years, by = &quot;species_name&quot;)</code></pre>
 <p>Finalment, arreglem el <em>input file</em> amb uns noms més explícits
 en relació al que estudiem</p>
 <pre class="r"><code>inputDf &lt;- inputDf[,c(&quot;species_code&quot;, &quot;species_name&quot;, &quot;Taxononmic_group&quot;, 
-                 &quot;annual_change_percentage&quot;, &quot;std_error&quot;, &quot;n&quot;, &quot;percentage&quot;,&quot;n_anys&quot;)]
+                 &quot;annual_change_percentage&quot;, &quot;std_error&quot;, &quot;n&quot;, &quot;percentage&quot;)]
 colnames(inputDf) &lt;- c(&quot;SpeciesCode&quot;, &quot;SpeciesName&quot;, &quot;Taxon&quot;, &quot;Trend&quot;, &quot;SETrend&quot;, 
-                       &quot;Distribution&quot;, &quot;SamplingCoverage&quot;,&quot;years&quot;)
+                       &quot;Distribution&quot;, &quot;SamplingCoverage&quot;)
 
 #     Mirem com  son els camps
 
@@ -1755,13 +1748,13 @@ summary(inputDf)</code></pre>
 ##  3rd Qu.: 5137903                                         3rd Qu.:  1.090  
 ##  Max.   :10000125                                         Max.   : 25.408  
 ##                                                                            
-##     SETrend         Distribution   SamplingCoverage      years      
-##  Min.   : 0.1246   Min.   :  5.0   Min.   :  2.609   Min.   : 8.00  
-##  1st Qu.: 0.3997   1st Qu.: 83.0   1st Qu.: 36.467   1st Qu.:22.00  
-##  Median : 0.7918   Median :173.0   Median : 44.156   Median :22.00  
-##  Mean   : 1.2824   Mean   :187.4   Mean   : 45.243   Mean   :21.23  
-##  3rd Qu.: 1.3568   3rd Qu.:299.0   3rd Qu.: 54.801   3rd Qu.:22.00  
-##  Max.   :29.0091   Max.   :378.0   Max.   :100.000   Max.   :29.00  
+##     SETrend         Distribution   SamplingCoverage 
+##  Min.   : 0.1246   Min.   :  5.0   Min.   :  2.609  
+##  1st Qu.: 0.3997   1st Qu.: 83.0   1st Qu.: 36.467  
+##  Median : 0.7918   Median :173.0   Median : 44.156  
+##  Mean   : 1.2824   Mean   :187.4   Mean   : 45.243  
+##  3rd Qu.: 1.3568   3rd Qu.:299.0   3rd Qu.: 54.801  
+##  Max.   :29.0091   Max.   :378.0   Max.   :100.000  
 ##                    NA&#39;s   :16      NA&#39;s   :18</code></pre>
 <p>Com que tenim molts NAs i volem limitar l’anàlisi a la disponibilitat
 de dades, eliminem els registres que no tenen distribució o
@@ -1776,13 +1769,13 @@ summary(inputDf)</code></pre>
 ##  Mean   :2536270                                         Mean   : -1.303  
 ##  3rd Qu.:5136562                                         3rd Qu.:  1.029  
 ##  Max.   :9796816                                         Max.   : 25.408  
-##     SETrend         Distribution   SamplingCoverage      years      
-##  Min.   : 0.1246   Min.   :  5.0   Min.   :  2.609   Min.   :14.00  
-##  1st Qu.: 0.3964   1st Qu.: 83.0   1st Qu.: 36.467   1st Qu.:22.00  
-##  Median : 0.7507   Median :173.0   Median : 44.156   Median :22.00  
-##  Mean   : 1.2700   Mean   :187.4   Mean   : 45.243   Mean   :21.39  
-##  3rd Qu.: 1.3412   3rd Qu.:298.5   3rd Qu.: 54.801   3rd Qu.:22.00  
-##  Max.   :29.0091   Max.   :378.0   Max.   :100.000   Max.   :22.00</code></pre>
+##     SETrend         Distribution   SamplingCoverage 
+##  Min.   : 0.1246   Min.   :  5.0   Min.   :  2.609  
+##  1st Qu.: 0.3964   1st Qu.: 83.0   1st Qu.: 36.467  
+##  Median : 0.7507   Median :173.0   Median : 44.156  
+##  Mean   : 1.2700   Mean   :187.4   Mean   : 45.243  
+##  3rd Qu.: 1.3412   3rd Qu.:298.5   3rd Qu.: 54.801  
+##  Max.   :29.0091   Max.   :378.0   Max.   :100.000</code></pre>
 <p>Ara sí!!</p>
 </div>
 <div id="anàlisi-de-correlació-entre-tendències-i-errors-estandards-amb-distribució-i-cobertura" class="section level1">
