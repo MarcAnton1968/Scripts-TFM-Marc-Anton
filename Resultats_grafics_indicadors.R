@@ -1,10 +1,11 @@
 #
-# Generació de la taula de resultats del MSI i grafics dels casos extrems
+# Grafics d'indicadors
 #
 #  Comencem per recollir el resultat del LPI original de la  carpeta MSI_dist0
 # 
 
 library(dplyr)
+library(ggplot2)
 
 setwd("C:/Marc/indicadors/LPI/recerca/Sensitivity_analisis")
 
@@ -44,7 +45,8 @@ carpeta_dist_max <- paste0("MSI_dist_max", max_dist_max)
 #  PEr saber el percentil anem a test_results i tindrem quin d'ells és per a cada carpeta
 #
 
-percentils <- testResults$percentil[testResults$p_value<0.05]
+# percentils <- testResults$percentil[testResults$p_value<0.05]
+percentils <- c(0.25,0.70)
 
 #
 # Generem un nom pel fitxer que ens permetrà graficar
@@ -86,7 +88,6 @@ LPIS <- bind_rows(
 #  Fem els gràfics
 #
 
-library(ggplot2)
 minyear <- min(LPIS$year)
 maxyear <- max(LPIS$year)
 jobname <- "Anàlisi de sensibilitat del Living Planet Index Catalunya"
@@ -106,7 +107,7 @@ ggplot(LPIS, aes(x = year, y = Trend, colour = LPI)) +
   scale_fill_manual(values=color_fons, labels = escala, guide = llegenda) +
   theme(legend.position ="bottom") +
   scale_x_continuous(breaks = seq(minyear,maxyear,2)) +
-  scale_y_continuous(limits = c(50,110), breaks = seq(50,110,20)) +
+  scale_y_continuous(limits = c(60,110), breaks = seq(60,110,10)) +
   theme_minimal()  +
   theme(
     axis.title = element_text(size = 10),    # Títols dels eixos
@@ -120,3 +121,156 @@ ggplot(LPIS, aes(x = year, y = Trend, colour = LPI)) +
 ggsave(dibuix_jpg,)
 ggsave(dibuix_vec,)
 
+#
+#   Ara grafiquem només LPI_cat
+#
+
+jobname <- "Living Planet Index Catalunya, versió 2024"
+escala <- c("LPI_cat")
+color_principal <- c("orange")
+color_fons <- c("orange1")
+llegenda = guide_legend(title = NULL, direction = "vertical")
+dibuix_jpg <- paste("LPI_cat_original","jpg", sep = ".")
+dibuix_vec <- paste("LPI_cat_original","svg", sep = ".")
+
+ggplot(LPIS[LPIS$LPI == "LPI_cat",], aes(x = year, y = Trend, colour = LPI)) +
+  geom_point(LPIS[LPIS$LPI == "LPI_cat",], mapping = aes(x = year, y = MSI, colour = LPI)) +
+  geom_line(size = 1) + 
+  geom_ribbon(aes(ymin = lower_CL_trend, ymax = upper_CL_trend, fill = LPI), 
+              lty = 0, alpha = 0.3) +  
+    labs(title = jobname, x = NULL) +
+  scale_color_manual(values=color_principal, labels = escala, guide = llegenda) +
+  scale_fill_manual(values=color_fons, labels = escala, guide = llegenda) +
+  theme(legend.position ="bottom") +
+  scale_x_continuous(breaks = seq(minyear,maxyear,2)) +
+  scale_y_continuous(limits = c(60,110), breaks = seq(60,110,10)) +
+  theme_minimal()  +
+  theme(
+    axis.title = element_text(size = 10),    # Títols dels eixos
+    axis.text = element_text(size = 10),     # Nombres de marques
+    legend.title = element_text(size = 10),  # Títol llegenda
+    legend.text = element_text(size = 10),  # Text llegenda
+    legend.position = "bottom",
+    legend.direction = "horizontal"
+  )
+
+ggsave(dibuix_jpg,)
+ggsave(dibuix_vec,)
+
+#
+#   El mateix, però sense punts
+#
+
+jobname <- "Living Planet Index Catalunya, versió 2024"
+escala <- c("LPI_cat")
+color_principal <- c("orange")
+color_fons <- c("orange1")
+llegenda = guide_legend(title = NULL, direction = "vertical")
+dibuix_jpg <- paste("LPI_cat_original_sense_punts","jpg", sep = ".")
+dibuix_vec <- paste("LPI_cat_original_sense_punts","svg", sep = ".")
+
+ggplot(LPIS[LPIS$LPI == "LPI_cat",], aes(x = year, y = Trend, colour = LPI)) +
+  geom_line(size = 1) + 
+  geom_ribbon(aes(ymin = lower_CL_trend, ymax = upper_CL_trend, fill = LPI), 
+              lty = 0, alpha = 0.3) +  
+  labs(title = jobname, x = NULL) +
+  scale_color_manual(values=color_principal, labels = escala, guide = llegenda) +
+  scale_fill_manual(values=color_fons, labels = escala, guide = llegenda) +
+  theme(legend.position ="bottom") +
+  scale_x_continuous(breaks = seq(minyear,maxyear,2)) +
+  scale_y_continuous(limits = c(60,110), breaks = seq(60,110,10)) +
+  theme_minimal()  +
+  theme(
+    axis.title = element_text(size = 10),    # Títols dels eixos
+    axis.text = element_text(size = 10),     # Nombres de marques
+    legend.title = element_text(size = 10),  # Títol llegenda
+    legend.text = element_text(size = 10),  # Text llegenda
+    legend.position = "bottom",
+    legend.direction = "horizontal"
+  )
+
+ggsave(dibuix_jpg,)
+ggsave(dibuix_vec,)
+
+#
+#   Anàlisi de sensibilitat de les distribucions menors
+#
+
+
+# percentils <- testResults$percentil[testResults$p_value<0.05]
+percentils <- c(0.15,0.25)
+
+#
+# Generem un nom pel fitxer que ens permetrà graficar
+#
+
+nom_percentil_baix <- paste0("LPI_cat_perc",100*min(percentils))
+nom_percentil_alt <- paste0("LPI_cat_perc",100*max(percentils))
+
+#
+# Agafem el LPI diferent amb el percentil baix
+#
+
+setwd("./MSI_dist3")
+assign(nom_percentil_baix, 
+       read.csv2("./LPI_CAT_RESULTS.csv", header = TRUE, sep = ";"))
+setwd("..")
+
+#
+# Agafem el LPI diferent amb el percentil alt
+#
+
+setwd("./MSI_dist5")
+assign(nom_percentil_alt, 
+       read.csv2("./LPI_CAT_RESULTS.csv", header = TRUE, sep = ";"))
+setwd("..")
+
+#
+#  Ajunto tots els LPIs
+#
+
+LPIS <- bind_rows(
+  LPI_cat = LPI_cat,
+  LPI_cat_perc10 = LPI_cat_perc15,
+  LPI_cat_perc25 = LPI_cat_perc25,
+  .id = "LPI"
+)
+
+#
+#  Grafiquem
+#
+
+minyear <- min(LPIS$year)
+maxyear <- max(LPIS$year)
+jobname <- "Anàlisi de sensibilitat del Living Planet Index Catalunya"
+escala <- c("LPI_cat: 355 espècies",
+            "LPI_cat_perc15:332 espècies",
+            "LPI_cat_perc25:314 espècies")
+color_principal <- c("orange","olivedrab","blue")
+color_fons <- c("orange1","olivedrab3","blue3")
+llegenda = guide_legend(title = NULL, direction = "vertical")
+dibuix_jpg <- paste("LPI_cat_4","jpg", sep = ".")
+dibuix_vec <- paste("LPI_cat_4","svg", sep = ".")
+
+ggplot(LPIS, aes(x = year, y = Trend, colour = LPI)) +
+  geom_line(size = 1) + 
+  geom_ribbon(aes(ymin = lower_CL_trend, ymax = upper_CL_trend, fill = LPI), 
+              lty = 0, alpha = 0.3) +  
+  labs(title = jobname, x = NULL) +
+  scale_color_manual(values=color_principal, labels = escala, guide = llegenda) +
+  scale_fill_manual(values=color_fons, labels = escala, guide = llegenda) +
+  theme(legend.position ="bottom") +
+  scale_x_continuous(breaks = seq(minyear,maxyear,2)) +
+  scale_y_continuous(limits = c(60,110), breaks = seq(60,110,10)) +
+  theme_minimal()  +
+  theme(
+    axis.title = element_text(size = 10),    # Títols dels eixos
+    axis.text = element_text(size = 10),     # Nombres de marques
+    legend.title = element_text(size = 10),  # Títol llegenda
+    legend.text = element_text(size = 10),  # Text llegenda
+    legend.position = "bottom",
+    legend.direction = "horizontal"
+  )
+
+ggsave(dibuix_jpg,)
+ggsave(dibuix_vec,)
