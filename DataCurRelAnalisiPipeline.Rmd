@@ -35,6 +35,8 @@ library(MuMIn)
 library(merTools)
 library(DHARMa)
 library(sjPlot)
+library(DataExplorer)
+library(summarytools)
 ```
 
 # 2. Càrrega de dades
@@ -197,6 +199,35 @@ summary(inputDf)
 
 Ara sí!!
 
+Mirem  quina pinta fan les dades per grup taxonòmic. Primer quantes espècies tenim
+
+```{r}
+taula_taxon <- inputDf %>%
+  group_by(Taxon) %>%
+  summarise(num_especies = n_distinct(SpeciesCode)) %>%
+  arrange(desc(num_especies))   
+plot_bar(inputDf$Taxon)
+
+```
+
+
+I després, la dispersió de les variables
+
+
+```{r}
+plot_boxplot(inputDf[,c(3:ncol(inputDf))], by = "Taxon")
+```
+
+Fem també un summarytools per veure millor les variables que ens interessen
+
+```{r}
+inputDfSummarytools <- bind_cols((inputDf[,3:4]),
+                                 abtsTrend = abs(inputDf$Trend),
+                                 (inputDf[,5:7]))
+dfSummary(inputDfSummarytools) %>% stview()
+```
+
+
 # 4. Anàlisi de correlació entre tendències i errors estandards amb distribució i cobertura
 
 Abans de començar amb l'anàlisi, ens cal comprovar la normalitat de les variables resposta a analitzar. Les variables són: 1) la tendència, i 2) el seu error estàndard
@@ -315,7 +346,7 @@ ggplot(data = inputDf, aes(x = Distribution, y = predictions, color = Taxon)) +
               linetype = "dashed", linewidth = 0.5) +
   theme_bw() +
   facet_wrap(~ Taxon) + 
-  theme(legend.position = "none") + labs(y = "Distribution")
+  theme(legend.position = "none") + labs(y = "Trend")
 
 ```
 
@@ -410,7 +441,7 @@ ggplot(inputDf, aes(Distribution, log(abs(Trend)), color= Taxon) ) +
 ggplot(data = inputDf, aes(x = Distribution, y = log(abs(Trend)), color = Taxon)) +
   geom_point() +
   theme_bw() +
-  facet_wrap(~ Taxon) + labs(y = "Trend") + 
+  facet_wrap(~ Taxon) + labs(y = "abs(Trend)") + 
   theme(legend.position = "none")
 
 ```
@@ -479,7 +510,7 @@ ggplot(data = inputDf, aes(x = Distribution, y = predictions2, color = Taxon)) +
               linetype = "dashed", linewidth = 0.5) +
   theme_bw() +
   facet_wrap(~ Taxon) + 
-  theme(legend.position = "none") + labs(y = "Distribution")
+  theme(legend.position = "none") + labs(y = "log(abs(trend))")
 ```
 
 ```{r}
@@ -527,10 +558,10 @@ ggplot(inputDf, aes(Distribution, log(abs(Trend)), color = Taxon)) +
   labs(colour = "Taxon") +
   theme_minimal()  +
   theme(
-    axis.title = element_text(size = 16),    # Títols dels eixos
-    axis.text = element_text(size = 14),     # Nombres de marques
-    legend.title = element_text(size = 15),  # Títol llegenda
-    legend.text = element_text(size = 13)    # Text llegenda
+    axis.title = element_text(size = 10),    # Títols dels eixos
+    axis.text = element_text(size = 10),     # Nombres de marques
+    legend.title = element_text(size = 10),  # Títol llegenda
+    legend.text = element_text(size = 10)    # Text llegenda
   )
 ```
 
@@ -604,11 +635,21 @@ Què vol dir que el millor model és el que incopora les dues variables i la sev
 Fem un gràfic per poder posar als informes i veure l'efecte de la interacció
 
 ```{R}
-set_theme(base = theme_classic(), #To remove the background color and the grids
-          #theme.font = 'serif',  #To change the font type
-          axis.title.size = 0.8,  #To change axis title size
-          axis.textsize = 0.8)    #To change axis text size
-plot_model(SampleModel2, type = "pred", terms = c("SamplingCoverage", "Distribution"))
+plot_model(
+  SampleModel2,
+  type = "pred",
+  terms = c("SamplingCoverage", "Distribution")
+) +
+  scale_color_manual(
+    values = c("darkorange3", "darkolivegreen3", "steelblue4"),   # Colors per les línies
+    labels = c("Mitjana - SD", "Mitjana", "Mitjana + SD")  # Labels a la llegenda
+  ) +
+  theme_classic() +
+  theme(
+    plot.title = element_blank(),
+    axis.title = element_text(size = 10),
+    axis.text  = element_text(size = 10)
+  )
 ```
 
 # 5. Valoració dels models escollits.
