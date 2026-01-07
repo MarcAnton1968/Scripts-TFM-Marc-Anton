@@ -10,7 +10,7 @@ library(gt)
 library(flextable)
 library(officer)
 library(dplyr)
-library(DataExplotplorer)
+library(DataExplorer)
 
 #
 # calcul especies per taxon
@@ -23,16 +23,6 @@ taula_taxon <- inputDf %>%
 
 taula_taxon
 
-#
-# calcul especies  per anys de serie
-#
-
-taula_anys <- inputDf %>%
-  group_by(years) %>%
-  summarise(num_especies = n_distinct(SpeciesCode)) %>%
-  arrange(desc(num_especies)) 
-
-taula_anys
 #
 #  Taula 1
 #
@@ -76,11 +66,11 @@ ft <- flextable(taula_resum) %>%
   bg(bg = "#73EDFF", part = "header")  # capçalera blava
 
 # Crear document Word
+
 doc <- read_docx()
 doc <- body_add_par(doc, "Resum d'espècies i estadístiques per taxon", style = "heading 1")
 doc <- body_add_flextable(doc, ft)
 print(doc, target = "Informe_TaulaResumCompacte.docx")
-
 
 #
 #  Annex II. Llista d'espècies  amb les seves caracteristiques
@@ -105,9 +95,9 @@ print(doc, target = "informe_taula.docx")
 #   Taula de resultats del test de sensibilitat del LPI-cat
 #
 
-gt(testResults) |>
+gt(testResults_dist) |>
   tab_header(
-    title = "Resultats del test de sensibilitat",
+    title = "Resultats del test de sensibilitat a totes les tendències extremes",
     subtitle = "Test de z scores"
   ) |>
   fmt_number(columns = everything()) |>
@@ -128,3 +118,6 @@ plot_qq(log(inputDf_hist))
 inputDf_trans <- inputDf_hist[,1:2]
 plot_histogram(log(inputDf_trans))
 plot_qq(log(inputDf_trans))
+
+
+
